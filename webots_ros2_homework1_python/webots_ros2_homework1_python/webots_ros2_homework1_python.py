@@ -21,7 +21,8 @@ LINEAR_VEL = 0.15
 TARGET_DIST = 5.0
 
 ROTATIONAL_VEL = 0.523
-TARGET_ANGLE = 3.141
+TARGET_ANGLE = 6.26
+WRAP_TOLERANCE = 0.0087
 
 
 STOP_DISTANCE = 0.35
@@ -73,6 +74,10 @@ class RandomWalk(Node):
 
         self.angle_to_turn = None
         self.kickstart = True
+        self.rotation_count = 0
+        self.transition_flag = False
+        self.last_theta = None
+        self.total_rotation = 0
 
 
     def odom_callback(self, msg):
@@ -128,6 +133,27 @@ class RandomWalk(Node):
             angle += 2 * math.pi
         return angle
     
+    def within_tolerance(self, angle):
+        if angle < (0 + WRAP_TOLERANCE):
+            return True
+        else:
+            return False
+        
+    def udpate_total_rotation(self, angle):
+        if self.last_theta is None:
+            self.last_theta = angle
+            return self.total_rotation
+        
+        delta = angle - self.last_theta
+
+        if delta > math.pi:
+            delta -= 2 * math.pi
+        elif delta < -math.pi:
+            delta += 2* math.pi
+
+        self.total_rotation += delta
+        self.last_theta = angle
+    
     # def calculate_gps_distance(self, start, current):
     #     dx = current(0) - start(0)
     #     dy = current(1) - start(1)
@@ -144,28 +170,36 @@ class RandomWalk(Node):
             
             
 
-        if self.turning == True:
+        if self.turning == True and self.start_theta is not None:
 
             if self.kickstart == True:
                 self.cmd.angular.z = ROTATIONAL_VEL
                 self.kickstart = False
             
-            if self.current_theta < 0:
-                self.current_theta = 2 * math.pi + self.current_theta
+            # if self.current_theta < 0:
+            #     self.current_theta = 2 * math.pi + self.current_theta
+
+            # self.current_theta += math.pi * self.rotation_count
                 
+
+            # if self.within_tolerance(self.current_theta) and self.last_theta > 0:
+            #     self.rotation_count += 1
+
+                
+            self.udpate_total_rotation(self.current_theta)
             
             
             
-            if  abs(self.current_theta - self.start_theta) < TARGET_ANGLE:
+            if  abs(self.total_rotation) < TARGET_ANGLE:
                 self.cmd.angular.z = ROTATIONAL_VEL
             else:
                 self.cmd.angular.z = 0.0
                 self.turning = False
                 self.get_logger().info(f'Reached {math.degrees(TARGET_ANGLE)} deegres')
                 
-
+            self.last_theta = self.current_theta
             self.publisher_.publish(self.cmd)
-            self.get_logger().info(f'Theta: {math.degrees(self.current_theta)}')
+            self.get_logger().info(f'Theta: {math.degrees(self.current_theta)}, Last Theta: {self.last_theta}, Rotation Count: {self.rotation_count}, Total Rotation: {math.degrees(self.total_rotation)}')
          #  Odometry pose: {self.odom_pos}
 
             
