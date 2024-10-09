@@ -11,10 +11,17 @@ from rclpy.qos import ReliabilityPolicy, QoSProfile
 import math
 import random
 
+#10 - 0.174
+#30 - 0.523
+#120 - 2.094
+#180 - 3.141
+#359 - 6.26
 
+LINEAR_VEL = 0.15
+TARGET_DIST = 5.0
 
-LINEAR_VEL = 0.22
-TARGET_DIST = 1.0
+ROTATIONAL_VEL = 0.523
+TARGET_ANGLE = 3.141
 
 
 STOP_DISTANCE = 0.35
@@ -54,23 +61,41 @@ class RandomWalk(Node):
         self.start_pos_gps = None
         self.odom_pos = None
         self.gps_pos = None
+        self.start_theta = None 
+        self.current_theta = None
 
         self.timer_period = TIMER_PERIOD
         self.cmd = Twist()
         self.timer = self.create_timer(self.timer_period, self.timer_callback)
         self.cmd = Twist()
-        self.moving = True
+        self.moving = False
+        self.turning = True
+
+        self.angle_to_turn = None
+        self.kickstart = True
 
 
     def odom_callback(self, msg):
-        position = msg.pose.pose.position
+        #position = msg.pose.pose.position
+        orientation = msg.pose.pose.orientation
 
-        if self.start_pos_odom is None:
-            self.start_pos_odom = position
+        # if self.start_pos_odom is None:
+        #     self.start_pos_odom = position
+
+        if self.start_theta is None:
+            self.start_theta = self.get_yaw(orientation)
+
+        if self.angle_to_turn is None:
+            self.angle_to_turn = 2*math.pi - TARGET_ANGLE
+            
         
-        self.odom_pos = position
+        #self.odom_pos = position
+        if self.turning is True:
+            self.current_theta = self.get_yaw(orientation)
 
-        self.current_dist = self.calculate_distance(self.start_pos_odom, position)
+        
+
+        #self.current_dist = self.calculate_distance(self.start_pos_odom, position)
 
     
     # def gps_callback(self, msg):
@@ -84,7 +109,24 @@ class RandomWalk(Node):
         dx = current.x - start.x
         dy = current.y - start.y
         return math.sqrt(dx**2 + dy**2)
-
+    
+    def get_yaw(self, orientation):
+        siny_cosp = 2 * (orientation.w * orientation.z + orientation.x * orientation.y)
+        cosy_cosp = 1 - 2 * (orientation.y * orientation.y + orientation.z * orientation.z)
+        calced = math.atan2(siny_cosp, cosy_cosp)
+        # if calced:
+        #     return 2*math.pi + calced
+        # else:
+        #     #self.get_logger().info(f'angle in calc: {calced}')
+        #     return calced
+        return calced
+        
+    def normalize_angle(self, angle):
+        while angle > math.pi:
+            angle -= 2 * math.pi
+        while angle < -math.pi:
+            angle += 2 * math.pi
+        return angle
     
     # def calculate_gps_distance(self, start, current):
     #     dx = current(0) - start(0)
@@ -92,16 +134,41 @@ class RandomWalk(Node):
     #     return math.sqrt(dx**2 + dy**2)
   
     def timer_callback(self):
-        if self.moving == True:
-            if self.current_dist < TARGET_DIST:
-                self.cmd.linear.x = LINEAR_VEL
-            else:
-                self.cmd.linear.x = 0.0
-                self.moving = False
-                self.get_logger().info(f'Reached {TARGET_DIST} m')
+        # if self.moving == True:
+        #     if self.current_dist < TARGET_DIST:
+        #         self.cmd.linear.x = LINEAR_VEL
+        #     else:
+        #         self.cmd.linear.x = 0.0
+        #         self.moving = False
+        #         self.get_logger().info(f'Reached {TARGET_DIST} m')
             
+            
+
+        if self.turning == True:
+
+            if self.kickstart == True:
+                self.cmd.angular.z = ROTATIONAL_VEL
+                self.kickstart = False
+            
+            if self.current_theta < 0:
+                self.current_theta = 2 * math.pi + self.current_theta
+                
+            
+            
+            
+            if  abs(self.current_theta - self.start_theta) < TARGET_ANGLE:
+                self.cmd.angular.z = ROTATIONAL_VEL
+            else:
+                self.cmd.angular.z = 0.0
+                self.turning = False
+                self.get_logger().info(f'Reached {math.degrees(TARGET_ANGLE)} deegres')
+                
+
             self.publisher_.publish(self.cmd)
-            self.get_logger().info(f'Odometry pose: {self.odom_pos}')
+            self.get_logger().info(f'Theta: {math.degrees(self.current_theta)}')
+         #  Odometry pose: {self.odom_pos}
+
+            
 
 
 
