@@ -3,6 +3,7 @@ from rclpy.node import Node
 import numpy as np
 from nav_msgs.msg import OccupancyGrid, Odometry
 from sensor_msgs.msg import LaserScan
+from apritag_msgs.msg import ApritagDetectionArray
 from geometry_msgs.msg import Twist
 from time import time
 
@@ -13,6 +14,7 @@ class Explorer(Node):
         self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, 10)
         self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
         self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
+        self.april_sub = self.create_subscription(ApritagDetectionArray, '/apriltag_detections', self.april_callback, 10)
         self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
         self.robot_radius = 0.2
@@ -26,6 +28,7 @@ class Explorer(Node):
         self.last_spin_time = time()
         self.is_spinning = False
         self.spin_start_time = None
+        self.detected_tags = set()
 
         self.exploration_timer = self.create_timer(1.0, self.explore)
 
@@ -43,6 +46,13 @@ class Explorer(Node):
 
     def scan_callback(self, msg):
         self.laser_scan = msg
+
+    def april_callback(self, msg):
+        for detection in msg.detections:
+            tag_id = detection.id[0]
+            if tag_id not in self.detected_tags:
+                self.detected_tags.add(tag_id)
+                self.get_logger().info(f'Detected tag {tag_id}')
 
     def find_frontiers(self, map_data, resolution, origin_x, origin_y):
         frontiers = []
