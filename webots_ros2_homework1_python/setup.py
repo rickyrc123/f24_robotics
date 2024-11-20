@@ -5,6 +5,7 @@ package_name = 'webots_ros2_homework1_python'
 data_files = []
 data_files.append(('share/ament_index/resource_index/packages', ['resource/' + package_name]))
 data_files.append(('share/' + package_name + '/launch', ['launch/f23_robotics_1_launch.py']))
+data_files.appent(('share/' + package_name + '/launch', ['launch/apriltag_h4_launch.py']))
 
 data_files.append(('share/' + package_name + '/worlds', [
     'worlds/turtlebot3_apriltags.wbt', 
