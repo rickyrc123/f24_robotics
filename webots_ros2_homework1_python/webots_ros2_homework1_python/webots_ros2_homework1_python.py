@@ -131,9 +131,7 @@ class RandomWalk(Node):
             self.cmd.angular.z = 0.0 
             self.publisher_.publish(self.cmd)
             self.turtlebot_moving = True
-        
-        
-                               str(self.odom_data))
+            str(self.odom_data))
         
         if self.stall == True:
            
