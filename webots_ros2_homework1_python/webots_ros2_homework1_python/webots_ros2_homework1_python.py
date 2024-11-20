@@ -1,152 +1,175 @@
 import rclpy
+# import the ROS2 python libraries
 from rclpy.node import Node
-import numpy as np
-from nav_msgs.msg import OccupancyGrid, Odometry
-from sensor_msgs.msg import LaserScan
-from apritag_msgs.msg import ApritagDetectionArray
+# import the Twist module from geometry_msgs interface
 from geometry_msgs.msg import Twist
-from time import time
+# import the LaserScan module from sensor_msgs interface
+from sensor_msgs.msg import LaserScan
+from nav_msgs.msg import Odometry
+# import Quality of Service library, to set the correct profile and reliability in order to read sensor data.
+from rclpy.qos import ReliabilityPolicy, QoSProfile
+import math
 
-class Explorer(Node):
+
+
+LINEAR_VEL = 0.22
+STOP_DISTANCE = 0.2
+LIDAR_ERROR = 0.05
+LIDAR_AVOID_DISTANCE = 0.7
+SAFE_STOP_DISTANCE = STOP_DISTANCE + LIDAR_ERROR
+RIGHT_SIDE_INDEX = 270
+RIGHT_FRONT_INDEX = 210
+LEFT_FRONT_INDEX=150
+LEFT_SIDE_INDEX=90
+
+class RandomWalk(Node):
+
     def __init__(self):
-        super().__init__('explorer')
+        # Initialize the publisher
+        super().__init__('random_walk_node')
+        self.scan_cleaned = []
+        self.stall = False
+        self.turtlebot_moving = False
+        self.publisher_ = self.create_publisher(Twist, 'cmd_vel', 10)
+        self.subscriber1 = self.create_subscription(
+            LaserScan,
+            '/scan',
+            self.listener_callback1,
+            QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self.subscriber2 = self.create_subscription(
+            Odometry,
+            '/odom',
+            self.listener_callback2,
+            QoSProfile(depth=10, reliability=ReliabilityPolicy.BEST_EFFORT))
+        self.laser_forward = 0
+        self.odom_data = 0
+        timer_period = 0.5
+        self.pose_saved=''
+        self.cmd = Twist()
+        self.greatestX = 0
+        self.greatestY =0
+        self.totalDistance = 0
+        self.timer = self.create_timer(timer_period, self.timer_callback)
 
-        self.map_sub = self.create_subscription(OccupancyGrid, '/map', self.map_callback, 10)
-        self.odom_sub = self.create_subscription(Odometry, '/odom', self.odom_callback, 10)
-        self.scan_sub = self.create_subscription(LaserScan, '/scan', self.scan_callback, 10)
-        self.april_sub = self.create_subscription(ApritagDetectionArray, '/apriltag_detections', self.april_callback, 10)
-        self.cmd_pub = self.create_publisher(Twist, '/cmd_vel', 10)
 
-        self.robot_radius = 0.2
-        self.safe_distance = 0.5
-        self.frontiers = []
-        self.current_goal = None
-        self.goal_reached = False
-        self.robot_position = (0.0, 0.0)
-        self.goal_tolerance = 0.3
-        self.laser_scan = None
-        self.last_spin_time = time()
-        self.is_spinning = False
-        self.spin_start_time = None
-        self.detected_tags = set()
-
-        self.exploration_timer = self.create_timer(1.0, self.explore)
-
-
-    def map_callback(self, msg):
-        map_data = np.array(msg.data, dtype=np.int8).reshape((msg.info.height, msg.info.width))
-        resolution = msg.info.resolution
-        origin_x = msg.info.origin.position.x
-        origin_y = msg.info.origin.position.y
-
-        self.frontiers = self.find_frontiers(map_data, resolution, origin_x, origin_y)
-    
-    def odom_callback(self, msg):
-        self.robot_position = (msg.pose.pose.position.x, msg.pose.pose.position.y)
-
-    def scan_callback(self, msg):
-        self.laser_scan = msg
-
-    def april_callback(self, msg):
-        for detection in msg.detections:
-            tag_id = detection.id[0]
-            if tag_id not in self.detected_tags:
-                self.detected_tags.add(tag_id)
-                self.get_logger().info(f'Detected tag {tag_id}')
-
-    def find_frontiers(self, map_data, resolution, origin_x, origin_y):
-        frontiers = []
-        for i in range(1, map_data.shape[0]-1):
-            for j in range(1, map_data.shape[1]-1):
-                if map_data[i, j] == 0:
-                    if np.any(map_data[i-1:i+2, j-1:j+2] == -1):
-                        x = origin_x + j * resolution
-                        y = origin_y + i * resolution
-                        frontiers.append((x, y))
-        return frontiers
-    
-    def explore(self):
-        current_time = time()
-        if current_time - self.last_spin_time >= 10 and not self.is_spinning:
-            self.is_spinning = True
-            self.spin_start_time = current_time
-            self.get_logger().info('Spinning')
-            self.perform_spin()
-            return
-
-        if self.is_spinning:
-            if current_time - self.spin_start_time < 5:
-                self.perform_spin()
+    def listener_callback1(self, msg1):
+        #self.get_logger().info('scan: "%s"' % msg1.ranges)
+        scan = msg1.ranges
+        self.scan_cleaned = []
+       
+        #self.get_logger().info('scan: "%s"' % scan)
+        # Assume 360 range measurements
+        for reading in scan:
+            if reading == float('Inf'):
+                self.scan_cleaned.append(3.5)
+            elif math.isnan(reading):
+                self.scan_cleaned.append(0.0)
             else:
-                self.is_spinning = False
-                self.last_spin_time = current_time
-                self.get_logger().info('Done spinning')
-            return
+            	self.scan_cleaned.append(reading)
+
+
+
+    def listener_callback2(self, msg2):
+        position = msg2.pose.pose.position
+        orientation = msg2.pose.pose.orientation
+        (posx, posy, posz) = (position.x, position.y, position.z)
+        (qx, qy, qz, qw) = (orientation.x, orientation.y, orientation.z, orientation.w)
+        self.get_logger().warn('self position: {},{},{}'.format(posx,posy,posz))
+        self.get_logger().info('total distance: {}'.format(self.totalDistance))
+        self.get_logger().info('furthest position: {},{}'.format(self.greatestX,self.greatestY));
+        # similarly for twist message if you need
+        self.pose_saved=position
         
-        if not self.frontiers:
-            self.get_logger().info('No frontiers found')
-            return
+        #Example of how to identify a stall..need better tuned position deltas; wheels spin and example fast
+        #diffX = math.fabs(self.pose_saved.x- position.x)
+        #diffY = math.fabs(self.pose_saved.y - position.y)
+        #if (diffX < 0.0001 and diffY < 0.0001):
+           #self.stall = True
+        #else:
+           #self.stall = False
+           
+        return None
+        
+    def timer_callback(self):
+        if (len(self.scan_cleaned)==0):
+    	    self.turtlebot_moving = False
+    	    return
+    	    
+        #left_lidar_samples = self.scan_cleaned[LEFT_SIDE_INDEX:LEFT_FRONT_INDEX]
+        #right_lidar_samples = self.scan_cleaned[RIGHT_FRONT_INDEX:RIGHT_SIDE_INDEX]
+        #front_lidar_samples = self.scan_cleaned[LEFT_FRONT_INDEX:RIGHT_FRONT_INDEX]
+        
+        left_lidar_min = min(self.scan_cleaned[LEFT_SIDE_INDEX:LEFT_FRONT_INDEX])
+        right_lidar_min = min(self.scan_cleaned[RIGHT_FRONT_INDEX:RIGHT_SIDE_INDEX])
+        front_lidar_min = min(self.scan_cleaned[LEFT_FRONT_INDEX:RIGHT_FRONT_INDEX])
 
-        if self.current_goal is None or self.goal_reached:
-            self.current_goal = self.select_nearest_frontier()
-            if self.current_goal:
-                self.goal_reached = False
-                self.navigate_to_goal(self.current_goal)
+        #self.get_logger().info('left scan slice: "%s"'%  min(left_lidar_samples))
+        #self.get_logger().info('front scan slice: "%s"'%  min(front_lidar_samples))
+        #self.get_logger().info('right scan slice: "%s"'%  min(right_lidar_samples))
+        
+        if front_lidar_min < SAFE_STOP_DISTANCE:
+            if self.turtlebot_moving == True:
+                self.cmd.linear.x = -0.5 
+                #if obstacle is too close, back up
+                self.cmd.angular.z = 0.0 
+                self.publisher_.publish(self.cmd)
+                #self.turtlebot_moving = False
+                self.totalDistance = self.totalDistance + 0.5
+                #self.get_logger().info('Stopping')
+                self.get_logger().info('Reversing')
+                return
+        elif front_lidar_min < LIDAR_AVOID_DISTANCE:
+                self.cmd.linear.x = 0.07 
+                if (right_lidar_min > left_lidar_min):
+                   self.cmd.angular.z = -0.1
+                else:
+                   self.cmd.angular.z = 0.1
+                self.publisher_.publish(self.cmd)
+                self.get_logger().info('Turning')
+                self.totalDistance = self.totalDistance + 0.07
+                self.turtlebot_moving = True
         else:
-            distance_to_goal = self.calculate_distance(self.robot_position, self.current_goal)
-            if distance_to_goal < self.goal_tolerance:
-                self.get_logger().info('Goal reached')
-                self.goal_reached = True
-            else:
-                self.navigate_to_goal(self.current_goal)
-            
-    
-    def select_nearest_frontier(self):
-        min_distance = float('inf')
-        nearest_frontier = None
-        for x, y in self.frontiers:
-            distance = self.calculate_distance(self.robot_position, (x, y))
-            if distance < min_distance:
-                min_distance = distance
-                nearest_frontier = (x, y)
-        return nearest_frontier
-    
-    def calculate_distance(self, position1, position2):
-        return np.sqrt((position1[0] - position2[0])**2 + (position1[1] - position2[1])**2)
-    
-    def navigate_to_goal(self, goal):
-        goal_x, goal_y = goal
-        robt_x, robot_y = self.robot_position
-        angle_to_goal = np.arctan2(goal_y - robot_y, goal_x - robt_x)
-        distance_to_goal = self.calculate_distance((robot_x, robot_y), (goal_x, goal_y))
+            self.cmd.linear.x = 0.1
+            self.totalDistance = self.totalDistance + 0.1
+            self.cmd.linear.z = 0.0
+            self.cmd.angular.z = 0.0 
+            self.publisher_.publish(self.cmd)
+            self.turtlebot_moving = True
+        if (math.hypot(self.greatestX,self.greatestY) < math.hypot(self.pose_saved.x,self.pose_saved.y)):
+            self.greatestX = self.pose_saved.x
+            self.greatestY = self.pose_saved.y
 
-        twist = Twist()
-        if distance_to_goal > self.goal_tolerance:
-            twist.linear.x = 0.2
-            twist.angular.x = angle_to_goal
-        else:
-            twist.linear.x = 0.0
-            twist.angular.x = 0.0
-            self.goal_reached = True
-            self.get_logger().info('Goal reached')
+        self.get_logger().info('Distance of the obstacle : %f' % front_lidar_min)
+        self.get_logger().info('I receive: "%s"' %
+                               str(self.odom_data))
+        
+        if self.stall == True:
+           self.get_logger().info('Stall reported, attempting to correct')
+           self.cmd.linear.x = -1.0
+           self.cmd.linear.z = 0.0
+           self.cmd.angular.z = 0.0 
+           self.publisher_.publish(self.cmd)
+           self.turtlebot_moving = True
+           self.stall = False
+        
+        # Display the message on the console
+        self.get_logger().info('Publishing: "%s"' % self.cmd)
+ 
 
-        self.cmd_pub.publish(twist)
-
-    def perform_spin(self):
-        twist = Twist()
-        twist.angular.z = 1.0
-        self.cmd_pub.publish(twist)
 
 def main(args=None):
+    # initialize the ROS communication
     rclpy.init(args=args)
-    node = Explorer()
-    try:
-        rclpy.spin(node)
-    except KeyboardInterrupt:
-        pass
-    finally:
-        node.destroy_node()
-        rclpy.shutdown()
+    # declare the node constructor
+    random_walk_node = RandomWalk()
+    # pause the program execution, waits for a request to kill the node (ctrl+c)
+    rclpy.spin(random_walk_node)
+    # Explicity destroy the node
+    random_walk_node.destroy_node()
+    # shutdown the ROS communication
+    rclpy.shutdown()
+
+
 
 if __name__ == '__main__':
-    main()            
+    main()
