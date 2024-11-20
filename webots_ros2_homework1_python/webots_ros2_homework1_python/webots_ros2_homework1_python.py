@@ -46,8 +46,6 @@ class RandomWalk(Node):
         timer_period = 0.5
         self.pose_saved=''
         self.cmd = Twist()
-        self.greatestX = 0
-        self.greatestY =0
         self.totalDistance = 0
         self.timer = self.create_timer(timer_period, self.timer_callback)
 
@@ -74,9 +72,7 @@ class RandomWalk(Node):
         orientation = msg2.pose.pose.orientation
         (posx, posy, posz) = (position.x, position.y, position.z)
         (qx, qy, qz, qw) = (orientation.x, orientation.y, orientation.z, orientation.w)
-        self.get_logger().warn('self position: {},{},{}'.format(posx,posy,posz))
-        self.get_logger().info('total distance: {}'.format(self.totalDistance))
-        self.get_logger().info('furthest position: {},{}'.format(self.greatestX,self.greatestY));
+        
         # similarly for twist message if you need
         self.pose_saved=position
         
@@ -116,7 +112,7 @@ class RandomWalk(Node):
                 #self.turtlebot_moving = False
                 self.totalDistance = self.totalDistance + 0.5
                 #self.get_logger().info('Stopping')
-                self.get_logger().info('Reversing')
+                
                 return
         elif front_lidar_min < LIDAR_AVOID_DISTANCE:
                 self.cmd.linear.x = 0.07 
@@ -125,7 +121,7 @@ class RandomWalk(Node):
                 else:
                    self.cmd.angular.z = 0.1
                 self.publisher_.publish(self.cmd)
-                self.get_logger().info('Turning')
+                
                 self.totalDistance = self.totalDistance + 0.07
                 self.turtlebot_moving = True
         else:
@@ -135,16 +131,12 @@ class RandomWalk(Node):
             self.cmd.angular.z = 0.0 
             self.publisher_.publish(self.cmd)
             self.turtlebot_moving = True
-        if (math.hypot(self.greatestX,self.greatestY) < math.hypot(self.pose_saved.x,self.pose_saved.y)):
-            self.greatestX = self.pose_saved.x
-            self.greatestY = self.pose_saved.y
-
-        self.get_logger().info('Distance of the obstacle : %f' % front_lidar_min)
-        self.get_logger().info('I receive: "%s"' %
+        
+        
                                str(self.odom_data))
         
         if self.stall == True:
-           self.get_logger().info('Stall reported, attempting to correct')
+           
            self.cmd.linear.x = -1.0
            self.cmd.linear.z = 0.0
            self.cmd.angular.z = 0.0 
@@ -153,7 +145,7 @@ class RandomWalk(Node):
            self.stall = False
         
         # Display the message on the console
-        self.get_logger().info('Publishing: "%s"' % self.cmd)
+        
  
 
 
