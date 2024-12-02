@@ -30,4 +30,11 @@ def generate_launch_description():
             ],
             parameters=[apriltag_params],
         ),
+        
+        Node(
+            package='v4l2_camera',
+            executable='v4l2_camera_node',
+            name='v4l2_camera_node',
+            output='screen'
+        ),
     ])
