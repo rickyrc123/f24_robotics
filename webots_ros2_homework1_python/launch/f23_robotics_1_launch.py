@@ -59,6 +59,7 @@ def generate_launch_description():
         arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'base_footprint'],
     )
 
+
     # ROS control spawners
     controller_manager_timeout = ['--controller-manager-timeout', '50']
     controller_manager_prefix = 'python.exe' if os.name == 'nt' else ''
@@ -104,7 +105,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument(
             'world',
-            default_value='f23_robotics_1.wbt',
+            default_value='maze.wbt',
             description='Choose one of the world files from `/webots_ros2_turtlebot/world` directory'
         ),
         DeclareLaunchArgument(
@@ -120,6 +121,7 @@ def generate_launch_description():
         footprint_publisher,
 
         turtlebot_driver,
+        
 
         # This action will kill all nodes once the Webots simulation has exited
         launch.actions.RegisterEventHandler(
